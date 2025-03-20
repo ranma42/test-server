@@ -1,0 +1,18 @@
+endpoints:
+  - target_host: generativelanguage.googleapis.com 
+    target_port: 443
+    source_port: 1443
+    source_type: http
+    target_type: https
+    redact_request_headers:
+      - X-Goog-Api-Key
+      - Authorization
+  - target_host: us-central1-aiplatform.googleapis.com
+    target_port: 443
+    source_port: 1444
+    source_type: http
+    target_type: https
+    redact_request_headers:
+      - X-Goog-Api-Key
+      - Authorization
+
