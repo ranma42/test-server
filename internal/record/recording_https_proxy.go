@@ -40,41 +40,49 @@ func (r *RecordingHTTPSProxy) Start() error {
 }
 
 func (r *RecordingHTTPSProxy) handleRequest(w http.ResponseWriter, req *http.Request) {
-	err := r.recordRequest(req)
+	reqHash, err := r.recordRequest(req)
 	if err != nil {
 		fmt.Printf("Error recording request: %v\n", err)
 		http.Error(w, fmt.Sprintf("Error recording request: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	_, _, err = r.proxyRequest(w, req)
+	resp, respBody, err := r.proxyRequest(w, req)
 	if err != nil {
 		fmt.Printf("Error proxying request: %v\n", err)
 		http.Error(w, fmt.Sprintf("Error proxying request: %v", err), http.StatusInternalServerError)
 		return
 	}
+
+	err = r.recordResponse(resp, reqHash, respBody)
+
+	if err != nil {
+		fmt.Printf("Error recording response: %v\n", err)
+		http.Error(w, fmt.Sprintf("Error recording response: %v", err), http.StatusInternalServerError)
+		return
+	}
 }
 
-func (r *RecordingHTTPSProxy) recordRequest(req *http.Request) error {
+func (r *RecordingHTTPSProxy) recordRequest(req *http.Request) (string, error) {
 	recordedRequest, err := store.NewRecordedRequest(req, r.prevRequestSHA, *r.config)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	recordedRequest.RedactHeaders(r.config.RedactRequestHeaders)
 
 	reqHash, err := recordedRequest.ComputeSum()
 	if err != nil {
-		return err
+		return "", err
 	}
 	reqHashHex := hex.EncodeToString(reqHash[:])
 
 	recordPath := filepath.Join(r.recordingDir, reqHashHex+".req")
 	err = os.WriteFile(recordPath, []byte(recordedRequest.Serialize()), 0644)
 	if err != nil {
-		return err
+		return "", err
 	}
-	return nil
+	return reqHashHex, nil
 }
 
 func (r *RecordingHTTPSProxy) proxyRequest(w http.ResponseWriter, req *http.Request) (*http.Response, []byte, error) {
@@ -114,4 +122,8 @@ func (r *RecordingHTTPSProxy) proxyRequest(w http.ResponseWriter, req *http.Requ
 
 	w.Write(respBodyBytes) // Send original (compressed) body to client
 	return resp, respBodyBytes, nil
+}
+
+func (r *RecordingHTTPSProxy) recordResponse(resp *http.Response, reqHash string, body []byte) error {
+	return nil
 }
