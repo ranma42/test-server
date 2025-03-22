@@ -102,6 +102,12 @@ func (r *RecordingHTTPSProxy) proxyRequest(w http.ResponseWriter, req *http.Requ
 		return nil, nil, err
 	}
 
+	for name, values := range req.Header {
+		for _, value := range values {
+			proxyReq.Header.Add(name, value)
+		}
+	}
+
 	resp, err := http.DefaultClient.Do(proxyReq)
 	if err != nil {
 		return nil, nil, err
