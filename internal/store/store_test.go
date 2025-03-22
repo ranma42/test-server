@@ -17,6 +17,8 @@ limitations under the License.
 package store
 
 import (
+	"bytes"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -44,8 +46,8 @@ func TestRecordedRequest_Serialize(t *testing.T) {
 			request: RecordedRequest{
 				Request: "GET / HTTP/1.1",
 				Header: http.Header{
-					"Content-Type": []string{"application/json"},
 					"Accept":       []string{"application/xml"},
+					"Content-Type": []string{"application/json"},
 				},
 				Body:            []byte{},
 				PreviousRequest: [32]byte{},
@@ -80,4 +82,82 @@ func TestRecordedRequest_Serialize(t *testing.T) {
 			require.Equal(t, tc.expected, actual, "Serialize() result mismatch")
 		})
 	}
+}
+
+func TestNewRecordedRequest(t *testing.T) {
+	headSha := [32]byte{
+		0xf7, 0x63, 0x4a, 0xb5, 0x2b, 0xfb, 0x7b, 0xfb,
+		0xa7, 0xca, 0xc0, 0x1c, 0xe2, 0xae, 0xb9, 0x6a,
+		0xde, 0x85, 0x4e, 0x8d, 0xfe, 0x9c, 0x5e, 0x9b,
+		0xfb, 0x1a, 0x72, 0x62, 0xcf, 0xa5, 0x0e, 0x49,
+	}
+
+	tests := []struct {
+		name        string
+		request     *http.Request
+		expected    *RecordedRequest
+		expectedErr bool
+	}{
+		{
+			name: "Test with body",
+			request: func() *http.Request {
+				req, _ := http.NewRequest("POST", "http://example.com/test", bytes.NewBuffer([]byte("test body")))
+				req.Header.Set("Content-Type", "application/json")
+				return req
+			}(),
+			expected: &RecordedRequest{
+				Request:         "POST http://example.com/test HTTP/1.1",
+				Header:          http.Header{"Content-Type": []string{"application/json"}},
+				Body:            []byte("test body"),
+				PreviousRequest: headSha,
+			},
+			expectedErr: false,
+		},
+		{
+			name: "Test without body",
+			request: func() *http.Request {
+				req, _ := http.NewRequest("GET", "http://example.com/test", nil)
+				return req
+			}(),
+			expected: &RecordedRequest{
+				Request:         "GET http://example.com/test HTTP/1.1",
+				Header:          http.Header{},
+				Body:            []byte{},
+				PreviousRequest: headSha,
+			},
+			expectedErr: false,
+		},
+		{
+			name: "Test with error reading body",
+			request: func() *http.Request {
+				req, _ := http.NewRequest("POST", "http://example.com/test", &errorReader{})
+				return req
+			}(),
+			expected:    nil,
+			expectedErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			recordedRequest, err := NewRecordedRequest(tc.request, headSha)
+
+			if tc.expectedErr {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, tc.expected.Request, recordedRequest.Request)
+			require.Equal(t, tc.expected.Header, recordedRequest.Header)
+			require.Equal(t, tc.expected.Body, recordedRequest.Body)
+			require.Equal(t, tc.expected.PreviousRequest, recordedRequest.PreviousRequest)
+		})
+	}
+}
+
+type errorReader struct{}
+
+func (e *errorReader) Read(p []byte) (n int, err error) {
+	return 0, fmt.Errorf("simulated error")
 }

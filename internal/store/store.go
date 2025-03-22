@@ -22,6 +22,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 )
@@ -42,6 +43,44 @@ type RecordedRequest struct {
 	Header          http.Header
 	Body            []byte
 	PreviousRequest SHA256Sum
+}
+
+// NewRecordedRequest creates a RecordedRequest from an http.Request.
+func NewRecordedRequest(req *http.Request, previousRequest SHA256Sum) (*RecordedRequest, error) {
+	// Read the body.
+	body, err := readBody(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read body: %w", err)
+	}
+
+	// Create the request string.
+	request := fmt.Sprintf("%s %s %s", req.Method, req.URL.String(), req.Proto)
+
+	// Create a copy of the headers.
+	header := req.Header.Clone()
+
+	// Create the RecordedRequest.
+	recordedRequest := &RecordedRequest{
+		Request:         request,
+		Header:          header,
+		Body:            body,
+		PreviousRequest: previousRequest,
+	}
+
+	return recordedRequest, nil
+}
+
+func readBody(req *http.Request) ([]byte, error) {
+	if req.Body == nil {
+		return []byte{}, nil
+	}
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, err
+	}
+	// Restore the request body for further use.
+	req.Body = io.NopCloser(bytes.NewBuffer(body))
+	return body, nil
 }
 
 // ComputeSum computes the SHA256 sum of a RecordedRequest.
