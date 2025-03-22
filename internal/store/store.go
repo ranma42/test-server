@@ -18,6 +18,7 @@ package store
 
 import (
 	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -218,4 +219,51 @@ func (r *RecordedRequest) RedactHeaders(headers []string) {
 	for _, header := range headers {
 		r.Header.Del(header)
 	}
+}
+
+type RecordedResponse struct {
+	StatusCode int
+	Header     http.Header
+	Body       []byte
+}
+
+func NewRecordedResponse(resp *http.Response, body []byte) (*RecordedResponse, error) {
+	if resp.Header.Get("Content-Encoding") == "gzip" {
+		gzipReader, err := gzip.NewReader(bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		defer gzipReader.Close()
+
+		// Read the uncompressed body.
+		uncompressedBody := new(bytes.Buffer)
+		_, err = uncompressedBody.ReadFrom(gzipReader)
+		if err != nil {
+			return nil, err
+		}
+		body = uncompressedBody.Bytes()
+
+	}
+
+	recordedResponse := &RecordedResponse{
+		StatusCode: resp.StatusCode,
+		Header:     resp.Header,
+		Body:       body,
+	}
+	return recordedResponse, nil
+}
+
+func (r *RecordedResponse) Serialize() string {
+	var buffer bytes.Buffer
+
+	buffer.WriteString(fmt.Sprintf("Status code: %d \n", r.StatusCode))
+	for name, values := range r.Header {
+		for _, value := range values {
+			buffer.WriteString(fmt.Sprintf("%s: %s\n", name, value))
+		}
+	}
+	buffer.WriteString("\n")
+	buffer.Write(r.Body)
+
+	return buffer.String()
 }

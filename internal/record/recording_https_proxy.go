@@ -125,5 +125,16 @@ func (r *RecordingHTTPSProxy) proxyRequest(w http.ResponseWriter, req *http.Requ
 }
 
 func (r *RecordingHTTPSProxy) recordResponse(resp *http.Response, reqHash string, body []byte) error {
+	recordedResponse, err := store.NewRecordedResponse(resp, body)
+	if err != nil {
+		return err
+	}
+
+	recordPath := filepath.Join(r.recordingDir, reqHash+".resp")
+	err = os.WriteFile(recordPath, []byte(recordedResponse.Serialize()), 0644)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
