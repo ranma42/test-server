@@ -212,3 +212,10 @@ func Deserialize(data string) (*RecordedRequest, error) {
 
 	return recordedRequest, nil
 }
+
+// RedactHeaders removes the specified headers from the RecordedRequest.
+func (r *RecordedRequest) RedactHeaders(headers []string) {
+	for _, header := range headers {
+		r.Header.Del(header)
+	}
+}

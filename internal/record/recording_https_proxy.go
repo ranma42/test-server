@@ -43,6 +43,8 @@ func (r *RecordingHTTPSProxy) handleRequest(w http.ResponseWriter, req *http.Req
 		panic(err)
 	}
 
+	recordedRequest.RedactHeaders(r.config.RedactRequestHeaders)
+
 	reqHash, err := recordedRequest.ComputeSum()
 	if err != nil {
 		panic(err)
