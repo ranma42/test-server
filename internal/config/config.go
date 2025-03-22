@@ -23,11 +23,11 @@ import (
 )
 
 type EndpointConfig struct {
+	TargetType           string   `yaml:"target_type"`
 	TargetHost           string   `yaml:"target_host"`
 	TargetPort           int64    `yaml:"target_port"`
 	SourcePort           int64    `yaml:"source_port"`
 	SourceType           string   `yaml:"source_type"`
-	TargetType           string   `yaml:"target_type"`
 	RedactRequestHeaders []string `yaml:"redact_request_headers"`
 }
 

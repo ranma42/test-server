@@ -52,20 +52,9 @@ func Record(cfg *config.TestServerConfig, recordingDir string) error {
 		go func(ep config.EndpointConfig) {
 			defer wg.Done()
 
-			// Create endpoint-specific directory
-			endpointDir := filepath.Join(recordingDir, fmt.Sprintf("%s:%d", ep.TargetHost, ep.TargetPort))
-			if err := os.MkdirAll(endpointDir, 0755); err != nil {
-				errChan <- fmt.Errorf("failed to create endpoint directory: %w", err)
-				return
-			}
-
-			var err error
-			// Choose proxy type based on source and target types
-			if strings.ToLower(ep.SourceType) == "http" && strings.ToLower(ep.TargetType) == "https" {
-				err = proxyHTTPToHTTPS(ep, endpointDir)
-			} else {
-				err = proxyTCPEndpoint(ep)
-			}
+			fmt.Printf("Starting server for %v\n", endpoint)
+			proxy := NewRecordingHTTPSProxy(&endpoint)
+			err := proxy.Start()
 
 			if err != nil {
 				errChan <- fmt.Errorf("proxy error for %s:%d: %w",
