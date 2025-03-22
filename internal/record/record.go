@@ -53,7 +53,7 @@ func Record(cfg *config.TestServerConfig, recordingDir string) error {
 			defer wg.Done()
 
 			fmt.Printf("Starting server for %v\n", endpoint)
-			proxy := NewRecordingHTTPSProxy(&endpoint)
+			proxy := NewRecordingHTTPSProxy(&endpoint, recordingDir)
 			err := proxy.Start()
 
 			if err != nil {

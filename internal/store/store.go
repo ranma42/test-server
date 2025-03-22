@@ -25,6 +25,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/google/test-server/internal/config"
 )
 
 type SHA256Sum [32]byte
@@ -43,10 +45,13 @@ type RecordedRequest struct {
 	Header          http.Header
 	Body            []byte
 	PreviousRequest SHA256Sum
+	ServerAddress   string
+	Port            int64
+	Protocol        string
 }
 
 // NewRecordedRequest creates a RecordedRequest from an http.Request.
-func NewRecordedRequest(req *http.Request, previousRequest SHA256Sum) (*RecordedRequest, error) {
+func NewRecordedRequest(req *http.Request, previousRequest SHA256Sum, cfg config.EndpointConfig) (*RecordedRequest, error) {
 	// Read the body.
 	body, err := readBody(req)
 	if err != nil {
@@ -65,6 +70,9 @@ func NewRecordedRequest(req *http.Request, previousRequest SHA256Sum) (*Recorded
 		Header:          header,
 		Body:            body,
 		PreviousRequest: previousRequest,
+		ServerAddress:   cfg.TargetHost,
+		Port:            cfg.TargetPort,
+		Protocol:        cfg.TargetType,
 	}
 
 	return recordedRequest, nil
@@ -114,6 +122,14 @@ func (r *RecordedRequest) Serialize() string {
 	builder.WriteString(previousRequestSum)
 	builder.WriteString("\n")
 
+	builder.WriteString(fmt.Sprintf("Server Address: %s\n", r.ServerAddress))
+
+	builder.WriteString(fmt.Sprintf("Port: %d\n", r.Port))
+
+	builder.WriteString(fmt.Sprintf("Protocol: %s\n", r.Protocol))
+
+	builder.WriteString(strings.Repeat("*", 80) + "\n")
+
 	// Format the HTTP request line.
 	builder.WriteString(r.Request)
 	builder.WriteString("\n")
@@ -130,4 +146,69 @@ func (r *RecordedRequest) Serialize() string {
 	builder.WriteString(string(r.Body))
 
 	return builder.String()
+}
+
+// Deserialize the request.
+func Deserialize(data string) (*RecordedRequest, error) {
+	lines := strings.Split(data, "\n")
+	if len(lines) < 6 {
+		return nil, fmt.Errorf("invalid serialized data: not enough lines")
+	}
+
+	previousRequestSum, err := hex.DecodeString(lines[0])
+	if err != nil {
+		return nil, fmt.Errorf("invalid previous request sum: %w", err)
+	}
+
+	var previousRequest SHA256Sum
+	copy(previousRequest[:], previousRequestSum)
+
+	serverAddress := strings.TrimPrefix(lines[1], "Server Address: ")
+	portString := strings.TrimPrefix(lines[2], "Port: ")
+	protocol := strings.TrimPrefix(lines[3], "Protocol: ")
+
+	port := 0
+	if portString != "" {
+		_, err = fmt.Sscan(portString, &port)
+		if err != nil {
+			return nil, fmt.Errorf("invalid port: %w", err)
+		}
+	}
+
+	request := lines[5]
+
+	headerStart := 6
+	bodyStart := -1
+	headers := make(http.Header)
+
+	for i := headerStart; i < len(lines); i++ {
+		if lines[i] == "" {
+			bodyStart = i + 1
+			break
+		}
+		parts := strings.SplitN(lines[i], ": ", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := parts[0]
+		value := parts[1]
+		headers.Add(key, value)
+	}
+
+	var body []byte
+	if bodyStart != -1 && bodyStart < len(lines) {
+		body = []byte(strings.Join(lines[bodyStart:], "\n"))
+	}
+
+	recordedRequest := &RecordedRequest{
+		Request:         request,
+		Header:          headers,
+		Body:            body,
+		PreviousRequest: previousRequest,
+		ServerAddress:   serverAddress,
+		Port:            int64(port),
+		Protocol:        protocol,
+	}
+
+	return recordedRequest, nil
 }
