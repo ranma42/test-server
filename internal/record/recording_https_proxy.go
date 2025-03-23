@@ -43,6 +43,8 @@ func (r *RecordingHTTPSProxy) Start() error {
 }
 
 func (r *RecordingHTTPSProxy) handleRequest(w http.ResponseWriter, req *http.Request) {
+	fmt.Printf("Recording request: %s %s\n", req.Method, req.URL.String())
+
 	reqHash, err := r.recordRequest(req)
 	if err != nil {
 		fmt.Printf("Error recording request: %v\n", err)

@@ -257,3 +257,47 @@ func (r *RecordedResponse) Serialize() string {
 
 	return buffer.String()
 }
+
+// DeserializeResponse deserializes the response.
+func DeserializeResponse(data []byte) (*RecordedResponse, error) {
+	lines := bytes.SplitN(data, []byte("\n"), 2)
+	if len(lines) < 2 {
+		return nil, fmt.Errorf("invalid serialized data: not enough lines")
+	}
+
+	statusCodeLine := lines[0]
+	statusCode := 0
+
+	_, err := fmt.Sscanf(string(statusCodeLine), "Status code: %d", &statusCode)
+	if err != nil {
+		return nil, fmt.Errorf("invalid status code: %w", err)
+	}
+
+	headerBodySplit := bytes.SplitN(lines[1], []byte("\n\n"), 2)
+	if len(headerBodySplit) < 2 {
+		return nil, fmt.Errorf("invalid serialized data: no body separator")
+	}
+
+	headerLines := bytes.Split(headerBodySplit[0], []byte("\n"))
+	headers := make(http.Header)
+
+	for _, line := range headerLines {
+		parts := bytes.SplitN(line, []byte(": "), 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := string(parts[0])
+		value := string(parts[1])
+		headers.Add(key, value)
+	}
+
+	body := headerBodySplit[1]
+
+	recordedResponse := &RecordedResponse{
+		StatusCode: statusCode,
+		Header:     headers,
+		Body:       body,
+	}
+
+	return recordedResponse, nil
+}

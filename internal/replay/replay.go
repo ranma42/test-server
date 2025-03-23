@@ -47,21 +47,14 @@ func Replay(cfg *config.TestServerConfig, recordingDir string) error {
 	errChan := make(chan error, len(cfg.Endpoints))
 
 	for _, endpoint := range cfg.Endpoints {
-		// Only handle HTTP to HTTPS for now
-		if strings.ToLower(endpoint.SourceType) == "http" && strings.ToLower(endpoint.TargetType) == "https" {
-			go func(ep config.EndpointConfig) {
-				// Get endpoint-specific directory
-				endpointDir := filepath.Join(recordingDir, fmt.Sprintf("%s:%d", ep.TargetHost, ep.TargetPort))
-
-				err := replayHTTPToHTTPS(ep, endpointDir)
-				if err != nil {
-					errChan <- fmt.Errorf("replay error for %s:%d: %w",
-						ep.TargetHost, ep.TargetPort, err)
-				}
-			}(endpoint)
-		} else {
-			fmt.Printf("Skipping non-HTTP endpoint: %s:%d\n", endpoint.TargetHost, endpoint.TargetPort)
-		}
+		go func(ep config.EndpointConfig) {
+			server := NewReplayHTTPServer(&endpoint, recordingDir)
+			err := server.Start()
+			if err != nil {
+				errChan <- fmt.Errorf("replay error for %s:%d: %w",
+					ep.TargetHost, ep.TargetPort, err)
+			}
+		}(endpoint)
 	}
 
 	// Return the first error encountered, if any
