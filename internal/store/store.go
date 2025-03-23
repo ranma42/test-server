@@ -109,12 +109,16 @@ func (r *RecordedRequest) ComputeSum() (SHA256Sum, error) {
 
 // Serialize the request.
 //
-// The serialization format is as follows
+// The serialization format is as follows:
 //   - The first line is the sha256 of the previous request as a hex string.
+//   - Next is the server address.
+//   - Next is the port.
+//   - Next is the protocol.
+//   - Next is a line of 80 asterisks.
 //   - Next is the HTTP request.
-//   - Next there's a single line for each header formatted as "{key}: {value}".
-//   - Next there are 2 empty lines.
-//   - Rest of the file is the body content.
+//   - Next, a single line for each header formatted as "{key}: {value}".
+//   - Next, there are 2 empty lines.
+//   - The rest of the file is the body content.
 func (r *RecordedRequest) Serialize() string {
 	var builder strings.Builder
 
