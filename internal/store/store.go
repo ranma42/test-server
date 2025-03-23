@@ -21,10 +21,10 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/google/test-server/internal/config"
@@ -86,16 +86,8 @@ func readBody(req *http.Request) ([]byte, error) {
 
 // ComputeSum computes the SHA256 sum of a RecordedRequest.
 func (r *RecordedRequest) ComputeSum() (string, error) {
-	// Serialize the header and body into a byte stream.
-	headerBytes, err := json.Marshal(r.Header)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal header: %w", err)
-	}
-
-	data := bytes.Join([][]byte{headerBytes, r.Body}, []byte{})
-
-	// Compute the SHA256 hash.
-	hash := sha256.Sum256(data)
+	serialized := r.Serialize()
+	hash := sha256.Sum256([]byte(serialized))
 	hashHex := hex.EncodeToString(hash[:])
 	return hashHex, nil
 }
@@ -131,10 +123,15 @@ func (r *RecordedRequest) Serialize() string {
 	builder.WriteString(r.Request)
 	builder.WriteString("\n")
 
-	// Format the headers.
+	// Format the headers in sorted order.
+	keys := make([]string, 0, len(r.Header))
+	for key := range r.Header {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
 
-	for key, values := range r.Header {
-		for _, value := range values {
+	for _, key := range keys {
+		for _, value := range r.Header[key] {
 			builder.WriteString(fmt.Sprintf("%s: %s\n", key, value))
 		}
 	}
