@@ -37,7 +37,7 @@ func (r *ReplayHTTPServer) Start() error {
 }
 
 func (r *ReplayHTTPServer) handleRequest(w http.ResponseWriter, req *http.Request) {
-	fmt.Printf("Recording request: %s %s\n", req.Method, req.URL.String())
+	fmt.Printf("Replaying request: %s %s\n", req.Method, req.URL.String())
 	reqHash, err := r.computeRequestHash(req)
 	if err != nil {
 		fmt.Printf("Error computing request sum: %v\n", err)
