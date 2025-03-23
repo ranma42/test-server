@@ -187,8 +187,8 @@ func Deserialize(data string) (*RecordedRequest, error) {
 	headers := make(http.Header)
 
 	for i := headerStart; i < len(lines); i++ {
-		if lines[i] == "" {
-			bodyStart = i + 1
+		if lines[i] == "" && lines[i+1] == "" {
+			bodyStart = i + 2
 			break
 		}
 		parts := strings.SplitN(lines[i], ": ", 2)

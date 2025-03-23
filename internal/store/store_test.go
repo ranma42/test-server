@@ -282,6 +282,60 @@ func TestRecordedRequest_RedactHeaders(t *testing.T) {
 	}
 }
 
+func TestRecordedRequest_Deserialize(t *testing.T) {
+	testCases := []struct {
+		name        string
+		input       string
+		expected    *RecordedRequest
+		expectedErr bool
+	}{
+		{
+			name:  "Valid serialized request",
+			input: "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20\nServer Address: example.com\nPort: 8080\nProtocol: http\n********************************************************************************\nGET / HTTP/1.1\nAccept: application/xml\nContent-Type: application/json\n\n\n{\"key\": \"value\"}",
+			expected: &RecordedRequest{
+				Request:         "GET / HTTP/1.1",
+				Header:          http.Header{"Accept": []string{"application/xml"}, "Content-Type": []string{"application/json"}},
+				Body:            []byte("{\"key\": \"value\"}"),
+				PreviousRequest: [32]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20},
+				ServerAddress:   "example.com",
+				Port:            8080,
+				Protocol:        "http",
+			},
+			expectedErr: false,
+		},
+		{
+			name:        "Invalid serialized request - missing separator",
+			input:       "GET / HTTP/1.1\nAccept: application/xml",
+			expected:    nil,
+			expectedErr: true,
+		},
+		{
+			name:        "Empty input",
+			input:       "",
+			expected:    nil,
+			expectedErr: true,
+		},
+		{
+			name:        "Invalid serialized request - invalid port",
+			input:       "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20\nServer Address: example.com\nPort: invalid\nProtocol: http\n********************************************************************************\nGET / HTTP/1.1\nAccept: application/xml\nContent-Type: application/json\n\n\n{\"key\": \"value\"}",
+			expected:    nil,
+			expectedErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual, err := Deserialize(tc.input)
+			if tc.expectedErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, actual)
+		})
+	}
+}
+
 type errorReader struct{}
 
 func (e *errorReader) Read(p []byte) (n int, err error) {
