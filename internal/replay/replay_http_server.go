@@ -93,6 +93,7 @@ func (r *ReplayHTTPServer) computeRequestHash(req *http.Request) (string, error)
 
 func (r *ReplayHTTPServer) loadResponse(sha string) (*store.RecordedResponse, error) {
 	responseFile := filepath.Join(r.recordingDir, sha+".resp")
+	fmt.Printf("loading response from : %s\n", responseFile)
 	responseData, err := os.ReadFile(responseFile)
 	if err != nil {
 		return nil, err
@@ -101,13 +102,16 @@ func (r *ReplayHTTPServer) loadResponse(sha string) (*store.RecordedResponse, er
 }
 
 func (r *ReplayHTTPServer) writedResponse(w http.ResponseWriter, resp *store.RecordedResponse) error {
-	w.WriteHeader(resp.StatusCode)
-
 	for key, values := range resp.Header {
 		for _, value := range values {
+			if key == "Content-Length" || key == "Content-Encoding" {
+				continue
+			}
 			w.Header().Add(key, value)
 		}
 	}
+
+	w.WriteHeader(resp.StatusCode)
 
 	_, err := w.Write(resp.Body)
 	return err

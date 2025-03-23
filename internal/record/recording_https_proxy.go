@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 
 	"github.com/google/test-server/internal/config"
 	"github.com/google/test-server/internal/store"
@@ -133,6 +134,8 @@ func (r *RecordingHTTPSProxy) proxyRequest(w http.ResponseWriter, req *http.Requ
 		return nil, nil, err
 	}
 
+	r.applyResponseHeaderReplacements(resp.Header)
+
 	for name, values := range resp.Header {
 		for _, value := range values {
 			w.Header().Add(name, value)
@@ -163,4 +166,23 @@ func (r *RecordingHTTPSProxy) recordResponse(resp *http.Response, reqHash string
 	}
 
 	return nil
+}
+
+// applyResponseHeaderReplacements applies the header replacements defined in the EndpointConfig to the request headers.
+func (r *RecordingHTTPSProxy) applyResponseHeaderReplacements(headers http.Header) {
+	for _, replacement := range r.config.ResponseHeaderReplacements {
+		if values, ok := headers[replacement.Header]; ok {
+			for i, value := range values {
+				headers[replacement.Header][i] = replaceRegex(value, replacement.Regex, replacement.Replace)
+			}
+		}
+	}
+}
+
+func replaceRegex(s, regex, replacement string) string {
+	// Compile the regex
+	re := regexp.MustCompile(regex)
+
+	// Replace all matches
+	return re.ReplaceAllString(s, replacement)
 }
