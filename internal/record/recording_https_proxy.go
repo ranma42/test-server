@@ -2,7 +2,6 @@ package record
 
 import (
 	"bytes"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,17 +13,21 @@ import (
 )
 
 type RecordingHTTPSProxy struct {
-	prevRequestSHA store.SHA256Sum
+	prevRequestSHA string
 	config         *config.EndpointConfig
 	recordingDir   string
 }
 
 func NewRecordingHTTPSProxy(cfg *config.EndpointConfig, recordingDir string) *RecordingHTTPSProxy {
 	return &RecordingHTTPSProxy{
-		prevRequestSHA: store.HeadSHA(),
+		prevRequestSHA: store.HeadSHA,
 		config:         cfg,
 		recordingDir:   recordingDir,
 	}
+}
+
+func (r *RecordingHTTPSProxy) ResetChain() {
+	r.prevRequestSHA = store.HeadSHA
 }
 
 func (r *RecordingHTTPSProxy) Start() error {
@@ -75,14 +78,13 @@ func (r *RecordingHTTPSProxy) recordRequest(req *http.Request) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	reqHashHex := hex.EncodeToString(reqHash[:])
 
-	recordPath := filepath.Join(r.recordingDir, reqHashHex+".req")
+	recordPath := filepath.Join(r.recordingDir, reqHash+".req")
 	err = os.WriteFile(recordPath, []byte(recordedRequest.Serialize()), 0644)
 	if err != nil {
 		return "", err
 	}
-	return reqHashHex, nil
+	return reqHash, nil
 }
 
 func (r *RecordingHTTPSProxy) proxyRequest(w http.ResponseWriter, req *http.Request) (*http.Response, []byte, error) {

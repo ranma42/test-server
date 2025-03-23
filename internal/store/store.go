@@ -30,29 +30,21 @@ import (
 	"github.com/google/test-server/internal/config"
 )
 
-type SHA256Sum [32]byte
-
-func HeadSHA() SHA256Sum {
-	return SHA256Sum{
-		0xf7, 0x63, 0x4a, 0xb5, 0x2b, 0xfb, 0x7b, 0xfb,
-		0xa7, 0xca, 0xc0, 0x1c, 0xe2, 0xae, 0xb9, 0x6a,
-		0xde, 0x85, 0x4e, 0x8d, 0xfe, 0x9c, 0x5e, 0x9b,
-		0xfb, 0x1a, 0x72, 0x62, 0xcf, 0xa5, 0x0e, 0x49,
-	}
-}
+// A sha of an invalid RecordRequest to be used as the head of all chains.
+const HeadSHA = "b4d6e60a9b97e7b98c63df9308728c5c88c0b40c398046772c63447b94608b4d"
 
 type RecordedRequest struct {
 	Request         string
 	Header          http.Header
 	Body            []byte
-	PreviousRequest SHA256Sum
+	PreviousRequest string // The sha256 sum of the previous request in the chain.
 	ServerAddress   string
 	Port            int64
 	Protocol        string
 }
 
 // NewRecordedRequest creates a RecordedRequest from an http.Request.
-func NewRecordedRequest(req *http.Request, previousRequest SHA256Sum, cfg config.EndpointConfig) (*RecordedRequest, error) {
+func NewRecordedRequest(req *http.Request, previousRequest string, cfg config.EndpointConfig) (*RecordedRequest, error) {
 	// Read the body.
 	body, err := readBody(req)
 	if err != nil {
@@ -93,18 +85,19 @@ func readBody(req *http.Request) ([]byte, error) {
 }
 
 // ComputeSum computes the SHA256 sum of a RecordedRequest.
-func (r *RecordedRequest) ComputeSum() (SHA256Sum, error) {
+func (r *RecordedRequest) ComputeSum() (string, error) {
 	// Serialize the header and body into a byte stream.
 	headerBytes, err := json.Marshal(r.Header)
 	if err != nil {
-		return SHA256Sum{}, fmt.Errorf("failed to marshal header: %w", err)
+		return "", fmt.Errorf("failed to marshal header: %w", err)
 	}
 
 	data := bytes.Join([][]byte{headerBytes, r.Body}, []byte{})
 
 	// Compute the SHA256 hash.
 	hash := sha256.Sum256(data)
-	return hash, nil
+	hashHex := hex.EncodeToString(hash[:])
+	return hashHex, nil
 }
 
 // Serialize the request.
@@ -123,8 +116,7 @@ func (r *RecordedRequest) Serialize() string {
 	var builder strings.Builder
 
 	// Format the SHA256 sum of the previous request.
-	previousRequestSum := hex.EncodeToString(r.PreviousRequest[:])
-	builder.WriteString(previousRequestSum)
+	builder.WriteString(r.PreviousRequest)
 	builder.WriteString("\n")
 
 	builder.WriteString(fmt.Sprintf("Server Address: %s\n", r.ServerAddress))
@@ -160,13 +152,7 @@ func Deserialize(data string) (*RecordedRequest, error) {
 		return nil, fmt.Errorf("invalid serialized data: not enough lines")
 	}
 
-	previousRequestSum, err := hex.DecodeString(lines[0])
-	if err != nil {
-		return nil, fmt.Errorf("invalid previous request sum: %w", err)
-	}
-
-	var previousRequest SHA256Sum
-	copy(previousRequest[:], previousRequestSum)
+	previousRequest := lines[0]
 
 	serverAddress := strings.TrimPrefix(lines[1], "Server Address: ")
 	portString := strings.TrimPrefix(lines[2], "Port: ")
@@ -174,7 +160,7 @@ func Deserialize(data string) (*RecordedRequest, error) {
 
 	port := 0
 	if portString != "" {
-		_, err = fmt.Sscan(portString, &port)
+		_, err := fmt.Sscan(portString, &port)
 		if err != nil {
 			return nil, fmt.Errorf("invalid port: %w", err)
 		}

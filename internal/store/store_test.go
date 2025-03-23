@@ -38,12 +38,12 @@ func TestRecordedRequest_Serialize(t *testing.T) {
 				Request:         "",
 				Header:          http.Header{},
 				Body:            []byte{},
-				PreviousRequest: [32]byte{},
+				PreviousRequest: HeadSHA,
 				ServerAddress:   "",
 				Port:            0,
 				Protocol:        "",
 			},
-			expected: "0000000000000000000000000000000000000000000000000000000000000000\nServer Address: \nPort: 0\nProtocol: \n********************************************************************************\n\n\n\n",
+			expected: HeadSHA + "\nServer Address: \nPort: 0\nProtocol: \n********************************************************************************\n\n\n\n",
 		},
 		{
 			name: "Request with headers",
@@ -54,12 +54,12 @@ func TestRecordedRequest_Serialize(t *testing.T) {
 					"Content-Type": []string{"application/json"},
 				},
 				Body:            []byte{},
-				PreviousRequest: [32]byte{},
+				PreviousRequest: HeadSHA,
 				ServerAddress:   "",
 				Port:            0,
 				Protocol:        "",
 			},
-			expected: "0000000000000000000000000000000000000000000000000000000000000000\nServer Address: \nPort: 0\nProtocol: \n********************************************************************************\nGET / HTTP/1.1\nAccept: application/xml\nContent-Type: application/json\n\n\n",
+			expected: HeadSHA + "\nServer Address: \nPort: 0\nProtocol: \n********************************************************************************\nGET / HTTP/1.1\nAccept: application/xml\nContent-Type: application/json\n\n\n",
 		},
 		{
 			name: "Request with body",
@@ -67,12 +67,12 @@ func TestRecordedRequest_Serialize(t *testing.T) {
 				Request:         "POST /data HTTP/1.1",
 				Header:          http.Header{},
 				Body:            []byte("{\"key\": \"value\"}"),
-				PreviousRequest: [32]byte{},
+				PreviousRequest: HeadSHA,
 				ServerAddress:   "",
 				Port:            0,
 				Protocol:        "",
 			},
-			expected: "0000000000000000000000000000000000000000000000000000000000000000\nServer Address: \nPort: 0\nProtocol: \n********************************************************************************\nPOST /data HTTP/1.1\n\n\n{\"key\": \"value\"}",
+			expected: HeadSHA + "\nServer Address: \nPort: 0\nProtocol: \n********************************************************************************\nPOST /data HTTP/1.1\n\n\n{\"key\": \"value\"}",
 		},
 		{
 			name: "Request with previous request SHA256 sum",
@@ -80,7 +80,7 @@ func TestRecordedRequest_Serialize(t *testing.T) {
 				Request:         "GET / HTTP/1.1",
 				Header:          http.Header{},
 				Body:            []byte{},
-				PreviousRequest: [32]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20},
+				PreviousRequest: "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
 				ServerAddress:   "",
 				Port:            0,
 				Protocol:        "",
@@ -98,13 +98,6 @@ func TestRecordedRequest_Serialize(t *testing.T) {
 }
 
 func TestNewRecordedRequest(t *testing.T) {
-	headSha := [32]byte{
-		0xf7, 0x63, 0x4a, 0xb5, 0x2b, 0xfb, 0x7b, 0xfb,
-		0xa7, 0xca, 0xc0, 0x1c, 0xe2, 0xae, 0xb9, 0x6a,
-		0xde, 0x85, 0x4e, 0x8d, 0xfe, 0x9c, 0x5e, 0x9b,
-		0xfb, 0x1a, 0x72, 0x62, 0xcf, 0xa5, 0x0e, 0x49,
-	}
-
 	tests := []struct {
 		name        string
 		request     *http.Request
@@ -128,7 +121,7 @@ func TestNewRecordedRequest(t *testing.T) {
 				Request:         "POST http://example.com/test HTTP/1.1",
 				Header:          http.Header{"Content-Type": []string{"application/json"}},
 				Body:            []byte("test body"),
-				PreviousRequest: headSha,
+				PreviousRequest: HeadSHA,
 				ServerAddress:   "example.com",
 				Port:            443,
 				Protocol:        "https",
@@ -150,7 +143,7 @@ func TestNewRecordedRequest(t *testing.T) {
 				Request:         "GET http://example.com/test HTTP/1.1",
 				Header:          http.Header{},
 				Body:            []byte{},
-				PreviousRequest: headSha,
+				PreviousRequest: HeadSHA,
 				ServerAddress:   "example.com",
 				Port:            443,
 				Protocol:        "https",
@@ -175,7 +168,7 @@ func TestNewRecordedRequest(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			recordedRequest, err := NewRecordedRequest(tc.request, headSha, tc.cfg)
+			recordedRequest, err := NewRecordedRequest(tc.request, HeadSHA, tc.cfg)
 
 			if tc.expectedErr {
 				require.Error(t, err)
@@ -207,7 +200,7 @@ func TestRecordedRequest_RedactHeaders(t *testing.T) {
 					"Content-Type": []string{"application/json"},
 				},
 				Body:            []byte{},
-				PreviousRequest: [32]byte{},
+				PreviousRequest: HeadSHA,
 				ServerAddress:   "",
 				Port:            0,
 				Protocol:        "",
@@ -227,7 +220,7 @@ func TestRecordedRequest_RedactHeaders(t *testing.T) {
 					"Authorization": []string{"Bearer token"},
 				},
 				Body:            []byte{},
-				PreviousRequest: [32]byte{},
+				PreviousRequest: HeadSHA,
 				ServerAddress:   "",
 				Port:            0,
 				Protocol:        "",
@@ -245,7 +238,7 @@ func TestRecordedRequest_RedactHeaders(t *testing.T) {
 					"Accept": []string{"application/xml"},
 				},
 				Body:            []byte{},
-				PreviousRequest: [32]byte{},
+				PreviousRequest: HeadSHA,
 				ServerAddress:   "",
 				Port:            0,
 				Protocol:        "",
@@ -264,7 +257,7 @@ func TestRecordedRequest_RedactHeaders(t *testing.T) {
 					"Content-Type": []string{"application/json"},
 				},
 				Body:            []byte{},
-				PreviousRequest: [32]byte{},
+				PreviousRequest: HeadSHA,
 				ServerAddress:   "",
 				Port:            0,
 				Protocol:        "",
@@ -296,7 +289,7 @@ func TestRecordedRequest_Deserialize(t *testing.T) {
 				Request:         "GET / HTTP/1.1",
 				Header:          http.Header{"Accept": []string{"application/xml"}, "Content-Type": []string{"application/json"}},
 				Body:            []byte("{\"key\": \"value\"}"),
-				PreviousRequest: [32]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20},
+				PreviousRequest: "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
 				ServerAddress:   "example.com",
 				Port:            8080,
 				Protocol:        "http",
