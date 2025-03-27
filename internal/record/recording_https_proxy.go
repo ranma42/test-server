@@ -27,6 +27,7 @@ import (
 
 	"github.com/google/test-server/internal/config"
 	"github.com/google/test-server/internal/store"
+	"github.com/gorilla/websocket"
 )
 
 type RecordingHTTPSProxy struct {
@@ -66,6 +67,12 @@ func (r *RecordingHTTPSProxy) handleRequest(w http.ResponseWriter, req *http.Req
 	if err != nil {
 		fmt.Printf("Error recording request: %v\n", err)
 		http.Error(w, fmt.Sprintf("Error recording request: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	if req.Header.Get("Upgrade") == "websocket" {
+		fmt.Printf("Upgrading connection to websocket...\n")
+		r.proxyWebsocket(w, req, reqHash)
 		return
 	}
 
@@ -160,6 +167,7 @@ func (r *RecordingHTTPSProxy) recordResponse(resp *http.Response, reqHash string
 	}
 
 	recordPath := filepath.Join(r.recordingDir, reqHash+".resp")
+	fmt.Printf("Writing response to: %s\n", recordPath)
 	err = os.WriteFile(recordPath, []byte(recordedResponse.Serialize()), 0644)
 	if err != nil {
 		return err
@@ -185,4 +193,110 @@ func replaceRegex(s, regex, replacement string) string {
 
 	// Replace all matches
 	return re.ReplaceAllString(s, replacement)
+}
+
+func (r *RecordingHTTPSProxy) proxyWebsocket(w http.ResponseWriter, req *http.Request, reqHash string) {
+	conn, clientConn, err := r.upgradeConnectionToWebsocket(w, req)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error proxying websocket: %v", err), http.StatusInternalServerError)
+		return
+	}
+	defer conn.Close()
+	defer clientConn.Close()
+
+	c := make(chan []byte)
+	quit := make(chan int)
+
+	go pumpWebsocket(clientConn, conn, c, quit, ">")
+	go pumpWebsocket(conn, clientConn, c, quit, "<")
+
+	recordPath := filepath.Join(r.recordingDir, reqHash+".websocket")
+	f, err := os.Create(recordPath)
+	if err != nil {
+		fmt.Printf("Error creating websocket recording file: %v\n", err)
+		http.Error(w, fmt.Sprintf("Error proxying websocket: %v", err), http.StatusInternalServerError)
+		return
+	}
+	defer f.Close()
+
+	quitCount := 0
+	for {
+		select {
+		case buf := <-c:
+			_, err := f.Write(buf)
+			if err != nil {
+				panic(fmt.Sprintf("Error writing to websocket recording file: %v\n", err))
+			}
+		case <-quit:
+			quitCount += 1
+			if quitCount == 2 {
+				return
+			}
+		}
+	}
+}
+
+func pumpWebsocket(src, dst *websocket.Conn, c chan []byte, quit chan int, prepend string) {
+	for {
+		msgType, buf, err := src.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err) {
+				quit <- 0
+				return
+			}
+			fmt.Printf("Error reading from websocket\n")
+			quit <- 1
+			return
+		}
+		prefix := fmt.Sprintf("%s%d", prepend, cap(buf))
+		c <- append([]byte(prefix), buf...)
+		err = dst.WriteMessage(msgType, buf)
+		if err != nil {
+			fmt.Printf("Error writing to websocket: %v\n", err)
+			quit <- 1
+			return
+		}
+	}
+}
+
+func (r *RecordingHTTPSProxy) upgradeConnectionToWebsocket(w http.ResponseWriter, req *http.Request) (*websocket.Conn, *websocket.Conn, error) {
+	url := fmt.Sprintf("wss://%s:%d%s", r.config.TargetHost, r.config.TargetPort, req.URL.Path)
+	if req.URL.RawQuery != "" {
+		url += "?" + req.URL.RawQuery
+	}
+
+	dialHeaders := http.Header{}
+	excludedHeaders := map[string]bool{
+		"Sec-Websocket-Version":    true,
+		"Sec-Websocket-Key":        true,
+		"Sec-Websocket-Extensions": true,
+		"Connection":               true,
+		"Upgrade":                  true,
+	}
+	for k, v := range req.Header {
+		if _, ok := excludedHeaders[k]; ok {
+			continue
+		}
+		dialHeaders[k] = v
+	}
+
+	dialer := websocket.Dialer{}
+	conn, _, err := dialer.Dial(url, dialHeaders)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	upgrader := websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin: func(r *http.Request) bool {
+			return true // Allow all origins
+		},
+	}
+
+	clientConn, err := upgrader.Upgrade(w, req, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	return conn, clientConn, err
 }
