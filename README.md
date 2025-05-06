@@ -9,18 +9,18 @@ Create a configuration file for your test server, example:
 ```yml
 endpoints:
   - target_host: generativelanguage.googleapis.com 
-    target_port: 443
-    source_port: 1443
-    source_type: http
     target_type: https
+    target_port: 443
+    source_type: http
+    source_port: 1443
     redact_request_headers:
       - X-Goog-Api-Key
       - Authorization
   - target_host: us-central1-aiplatform.googleapis.com
-    target_port: 443
-    source_port: 1444
-    source_type: http
     target_type: https
+    target_port: 443
+    source_type: http
+    source_port: 1444
     redact_request_headers:
       - X-Goog-Api-Key
       - Authorization
