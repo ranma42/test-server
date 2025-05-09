@@ -26,6 +26,7 @@ import (
 	"regexp"
 
 	"github.com/google/test-server/internal/config"
+	"github.com/google/test-server/internal/redact"
 	"github.com/google/test-server/internal/store"
 	"github.com/gorilla/websocket"
 )
@@ -34,13 +35,15 @@ type RecordingHTTPSProxy struct {
 	prevRequestSHA string
 	config         *config.EndpointConfig
 	recordingDir   string
+	redactor       *redact.Redact
 }
 
-func NewRecordingHTTPSProxy(cfg *config.EndpointConfig, recordingDir string) *RecordingHTTPSProxy {
+func NewRecordingHTTPSProxy(cfg *config.EndpointConfig, recordingDir string, redactor *redact.Redact) *RecordingHTTPSProxy {
 	return &RecordingHTTPSProxy{
 		prevRequestSHA: store.HeadSHA,
 		config:         cfg,
 		recordingDir:   recordingDir,
+		redactor:       redactor,
 	}
 }
 
@@ -98,7 +101,12 @@ func (r *RecordingHTTPSProxy) recordRequest(req *http.Request) (string, error) {
 		return "", err
 	}
 
+	// Redact headers by key
 	recordedRequest.RedactHeaders(r.config.RedactRequestHeaders)
+	// Redacts secrets from header values
+	r.redactor.Headers(recordedRequest.Header)
+	recordedRequest.Request = r.redactor.String(recordedRequest.Request)
+	recordedRequest.Body = r.redactor.Bytes(recordedRequest.Body)
 
 	reqHash, err := recordedRequest.ComputeSum()
 	if err != nil {
@@ -165,6 +173,8 @@ func (r *RecordingHTTPSProxy) recordResponse(resp *http.Response, reqHash string
 	if err != nil {
 		return err
 	}
+
+	recordedResponse.Body = r.redactor.Bytes(recordedResponse.Body)
 
 	recordPath := filepath.Join(r.recordingDir, reqHash+".resp")
 	fmt.Printf("Writing response to: %s\n", recordPath)
