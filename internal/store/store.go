@@ -85,11 +85,26 @@ func readBody(req *http.Request) ([]byte, error) {
 }
 
 // ComputeSum computes the SHA256 sum of a RecordedRequest.
-func (r *RecordedRequest) ComputeSum() (string, error) {
+func (r *RecordedRequest) ComputeSum() string {
 	serialized := r.Serialize()
 	hash := sha256.Sum256([]byte(serialized))
 	hashHex := hex.EncodeToString(hash[:])
-	return hashHex, nil
+	return hashHex
+}
+
+// GetRecordingFileName returns the recording file name.
+// It prefers the value from the TEST_NAME header.
+// It returns error when test name contains illegal sequence.
+// If the TEST_NAME header is not present, it falls back to computed SHA256 sum.
+func (r *RecordedRequest) GetRecordingFileName() (string, error) {
+	testName := r.Header.Get("Test-Name")
+	if strings.Contains(testName, "../") {
+		return "", fmt.Errorf("test name: %s contains illegal sequence '../'", testName)
+	}
+	if testName != "" {
+		return testName, nil
+	}
+	return r.ComputeSum(), nil
 }
 
 // Serialize the request.
