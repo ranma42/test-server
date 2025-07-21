@@ -30,7 +30,6 @@ import (
 	"github.com/google/test-server/internal/config"
 )
 
-// A sha of an invalid RecordRequest to be used as the head of all chains.
 const HeadSHA = "b4d6e60a9b97e7b98c63df9308728c5c88c0b40c398046772c63447b94608b4d"
 
 type RecordedRequest struct {
@@ -102,7 +101,8 @@ func (r *RecordedRequest) GetRecordingFileName() (string, error) {
 		return "", fmt.Errorf("test name: %s contains illegal sequence '../'", testName)
 	}
 	if testName != "" {
-		return testName, nil
+		fileName := strings.ReplaceAll(testName, " ", "_")
+		return fileName, nil
 	}
 	return r.ComputeSum(), nil
 }

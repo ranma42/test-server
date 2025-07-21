@@ -33,6 +33,7 @@ import (
 
 type RecordingHTTPSProxy struct {
 	prevRequestSHA string
+	seenFiles	   map[string]struct{}
 	config         *config.EndpointConfig
 	recordingDir   string
 	redactor       *redact.Redact
@@ -41,6 +42,7 @@ type RecordingHTTPSProxy struct {
 func NewRecordingHTTPSProxy(cfg *config.EndpointConfig, recordingDir string, redactor *redact.Redact) *RecordingHTTPSProxy {
 	return &RecordingHTTPSProxy{
 		prevRequestSHA: store.HeadSHA,
+		seenFiles: 		make(map[string]struct{}),
 		config:         cfg,
 		recordingDir:   recordingDir,
 		redactor:       redactor,
@@ -70,7 +72,7 @@ func (r *RecordingHTTPSProxy) handleRequest(w http.ResponseWriter, req *http.Req
 	}
 	fmt.Printf("Recording request: %s %s\n", req.Method, req.URL.String())
 
-	recReq, err := r.recordRequest(req)
+	recReq, err := r.redactRequest(req)
 	if err != nil {
 		fmt.Printf("Error recording request: %v\n", err)
 		http.Error(w, fmt.Sprintf("Error recording request: %v", err), http.StatusInternalServerError)
@@ -81,6 +83,10 @@ func (r *RecordingHTTPSProxy) handleRequest(w http.ResponseWriter, req *http.Req
 		fmt.Printf("Invalid recording file name: %v\n", err)
 		http.Error(w, fmt.Sprintf("Invalid recording file name: %v", err), http.StatusInternalServerError)
 		return
+	}
+	if _, ok := r.seenFiles[fileName]; !ok {
+		// Reset to HeadSHA when first time seen a request from the given file.
+		recReq.PreviousRequest=store.HeadSHA
 	}
 
 	if req.Header.Get("Upgrade") == "websocket" {
@@ -95,17 +101,20 @@ func (r *RecordingHTTPSProxy) handleRequest(w http.ResponseWriter, req *http.Req
 		http.Error(w, fmt.Sprintf("Error proxying request: %v", err), http.StatusInternalServerError)
 		return
 	}
-
-	err = r.recordResponse(resp, fileName, respBody)
-
+	shaSum := recReq.ComputeSum()
+	err = r.recordResponse(recReq, resp, fileName, shaSum, respBody)
 	if err != nil {
 		fmt.Printf("Error recording response: %v\n", err)
 		http.Error(w, fmt.Sprintf("Error recording response: %v", err), http.StatusInternalServerError)
 		return
 	}
+	if (fileName != shaSum) {
+		r.prevRequestSHA = shaSum
+	}
+	r.seenFiles[fileName] = struct{}{}
 }
 
-func (r *RecordingHTTPSProxy) recordRequest(req *http.Request) (*store.RecordedRequest, error) {
+func (r *RecordingHTTPSProxy) redactRequest(req *http.Request) (*store.RecordedRequest, error) {
 	recordedRequest, err := store.NewRecordedRequest(req, r.prevRequestSHA, *r.config)
 	if err != nil {
 		return recordedRequest, err
@@ -117,17 +126,6 @@ func (r *RecordingHTTPSProxy) recordRequest(req *http.Request) (*store.RecordedR
 	r.redactor.Headers(recordedRequest.Header)
 	recordedRequest.Request = r.redactor.String(recordedRequest.Request)
 	recordedRequest.Body = r.redactor.Bytes(recordedRequest.Body)
-
-	fileName, err := recordedRequest.GetRecordingFileName()
-	if err != nil {
-		fmt.Printf("Invalid recording file name: %v\n", err)
-		return recordedRequest, err
-	}
-	recordPath := filepath.Join(r.recordingDir, fileName+".req")
-	err = os.WriteFile(recordPath, []byte(recordedRequest.Serialize()), 0644)
-	if err != nil {
-		return recordedRequest, err
-	}
 	return recordedRequest, nil
 }
 
@@ -178,21 +176,47 @@ func (r *RecordingHTTPSProxy) proxyRequest(w http.ResponseWriter, req *http.Requ
 	return resp, respBodyBytes, nil
 }
 
-func (r *RecordingHTTPSProxy) recordResponse(resp *http.Response, fileName string, body []byte) error {
+func (r *RecordingHTTPSProxy) recordResponse(recReq *store.RecordedRequest, resp *http.Response, fileName string, shaSum string, body []byte) error {
 	recordedResponse, err := store.NewRecordedResponse(resp, body)
 	if err != nil {
 		return err
 	}
+	recordPath := filepath.Join(r.recordingDir, fileName+".http.log")
 
-	recordedResponse.Body = r.redactor.Bytes(recordedResponse.Body)
+	// Default to overwriting the file, assuming it's a new file to record.
+	fileMode := os.O_TRUNC
+	// If we've seen requests with the same file name before, change the mode to append.
+	if _, ok := r.seenFiles[fileName]; ok {
+		fileMode = os.O_APPEND
+	}
+	file, err := os.OpenFile(recordPath, fileMode|os.O_CREATE|os.O_WRONLY , 0644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
 
-	recordPath := filepath.Join(r.recordingDir, fileName+".resp")
-	fmt.Printf("Writing response to: %s\n", recordPath)
-	err = os.WriteFile(recordPath, []byte(recordedResponse.Serialize()), 0644)
+	fmt.Printf("Writing request to: %s\n", recordPath)
+	serializedReq := recReq.Serialize()
+	_, err = file.WriteString(fmt.Sprintf("%s.req %d\n", shaSum, len(serializedReq)))
+	if err != nil {
+		return err
+	}
+	_, err = file.WriteString(serializedReq)
 	if err != nil {
 		return err
 	}
 
+	fmt.Printf("Writing response to: %s\n", recordPath)
+    recordedResponse.Body = r.redactor.Bytes(recordedResponse.Body)
+	serializedResp := recordedResponse.Serialize()
+	_, err = file.WriteString(fmt.Sprintf("\n%s.resp %d\n", shaSum, len(serializedResp)))
+	if err != nil {
+		return err
+	}
+	_, err = file.WriteString(serializedResp)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -230,7 +254,7 @@ func (r *RecordingHTTPSProxy) proxyWebsocket(w http.ResponseWriter, req *http.Re
 	go pumpWebsocket(clientConn, conn, c, quit, ">")
 	go pumpWebsocket(conn, clientConn, c, quit, "<")
 
-	recordPath := filepath.Join(r.recordingDir, fileName+".websocket")
+	recordPath := filepath.Join(r.recordingDir, fileName+".websocket.log")
 	f, err := os.Create(recordPath)
 	if err != nil {
 		fmt.Printf("Error creating websocket recording file: %v\n", err)
